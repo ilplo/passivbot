@@ -252,7 +252,7 @@ class HyperliquidBot(Passivbot):
                 break
             new_hash = calc_hash(fetched)
             if prev_hash == new_hash:
-                print("debug pnls hash", prev_hash, new_hash)
+                logging.info("debug pnls hash", prev_hash, new_hash)
                 break
             prev_hash = new_hash
             logging.info(

@@ -965,7 +965,7 @@ class Passivbot:
                     # add order to open_orders
                     self.add_new_order(upd, source="WS")
                 else:
-                    print("debug open orders unknown type", upd)
+                    logging.info("debug open orders unknown type", upd)
         except Exception as e:
             logging.error(f"error updating open orders from websocket {upd_list} {e}")
             traceback.print_exc()

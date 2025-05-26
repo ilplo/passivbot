@@ -665,9 +665,9 @@ class Evaluator:
                     analyses_combined[f"{key}_max"] = np.max(values)
                     analyses_combined[f"{key}_std"] = np.std(values)
                 except Exception as e:
-                    print("\n\n debug\n\n")
-                    print("key, values", key, values)
-                    print(e)
+                    logging.error("\n\n debug\n\n")
+                    logging.error("key, values", key, values)
+                    logging.error(e)
                     traceback.print_exc()
                     raise
         return analyses_combined

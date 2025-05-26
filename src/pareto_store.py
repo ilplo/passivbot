@@ -463,7 +463,11 @@ def main():
             legend=dict(x=0.01, y=0.99),
         )
 
+        # save the figure
+        fig.write_html(f"{pareto_dir}/pareto_store.html")
+        fig.write_image(f"{pareto_dir}/pareto_store.png")
         fig.show()
+
     elif len(w_keys) > 3:
         # Pairwise 2D scatter plots for all w_i vs w_j
         n = len(w_keys)
@@ -499,7 +503,11 @@ def main():
         fig.subplots_adjust(top=0.93)
         cbar = fig.colorbar(sc, ax=axs.tolist(), shrink=0.95)
         cbar.set_label("Distance to Ideal")
-        plt.show()
+
+        # save the figure
+        fig.write_html(f"{pareto_dir}/pareto_store.html")
+        fig.write_image(f"{pareto_dir}/pareto_store.png")
+        fig.show()
 
 
 if __name__ == "__main__":

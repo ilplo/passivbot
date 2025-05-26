@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 
 import numpy as np
@@ -1233,7 +1232,7 @@ def find_close_qty_long_bringing_wallet_exposure_to_target(
             break
     evals_guesses = sorted([(e, g) for e, g in zip(evals, guesses)])
     if False:  # evals_guesses[0][0] > 0.15:
-        logging.info("debug find_close_qty_long_bringing_wallet_exposure_to_target")
+        print("debug find_close_qty_long_bringing_wallet_exposure_to_target")
         print(
             "balance, psize, pprice, wallet_exposure_target, close_price, inverse, c_mult, qty_step, c_mult,"
         )
@@ -1343,7 +1342,7 @@ def find_close_qty_short_bringing_wallet_exposure_to_target(
             break
     evals_guesses = sorted([(e, g) for e, g in zip(evals, guesses)])
     if False:  # evals_guesses[0][0] > 0.15:
-        logging.info("debug find_close_qty_short_bringing_wallet_exposure_to_target")
+        print("debug find_close_qty_short_bringing_wallet_exposure_to_target")
         print(
             "balance, psize, pprice, wallet_exposure_target, close_price, inverse, c_mult, qty_step, c_mult,"
         )
@@ -1428,7 +1427,7 @@ def find_entry_qty_bringing_wallet_exposure_to_target(
             break
     evals_guesses = sorted([(e, g) for e, g in zip(evals, guesses)])
     if False:  # evals_guesses[0][0] > 0.15:
-        logging.info("debug find_entry_qty_bringing_wallet_exposure_to_target")
+        print("debug find_entry_qty_bringing_wallet_exposure_to_target")
         print(
             "balance, psize, pprice, wallet_exposure_target, entry_price, inverse, c_mult, qty_step,"
         )

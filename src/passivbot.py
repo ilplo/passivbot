@@ -314,7 +314,7 @@ class Passivbot:
                 )
             except Exception as e:
                 logging.error(f"error with {get_function_name()} {e}")
-                traceback.print_exc()
+                # traceback.print_exc()
                 await asyncio.sleep(1.0)
 
     async def prepare_for_execution(self):
@@ -379,7 +379,7 @@ class Passivbot:
             except Exception as e:
                 logging.error(f"error executing orders {to_create} {e}")
                 print_async_exception(res)
-                traceback.print_exc()
+                # traceback.print_exc()
                 await self.restart_bot_on_too_many_errors()
         if to_cancel or to_create:
             self.previous_REST_update_ts = 0
@@ -552,7 +552,7 @@ class Passivbot:
             return True
         except Exception as e:
             logging.error(f"error with {get_function_name()} {symbol} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             return False
 
     def dump_ohlcvs_1m_to_cache(self, symbol):
@@ -563,7 +563,7 @@ class Passivbot:
             return True
         except Exception as e:
             logging.error(f"error with {get_function_name()} for {symbol}: {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             return False
 
     def update_trailing_data(self):
@@ -918,7 +918,7 @@ class Passivbot:
                 return True
         except Exception as e:
             logging.error(f"failed to add order to self.open_orders {source} {order} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             return False
 
     def remove_order(self, order: dict, source="WS", reason="cancelled"):
@@ -943,7 +943,7 @@ class Passivbot:
                 return True
         except Exception as e:
             logging.error(f"failed to remove order from self.open_orders {order} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             return False
 
     def handle_order_update(self, upd_list):
@@ -965,10 +965,10 @@ class Passivbot:
                     # add order to open_orders
                     self.add_new_order(upd, source="WS")
                 else:
-                    logging.info("debug open orders unknown type", upd)
+                    print("debug open orders unknown type", upd)
         except Exception as e:
             logging.error(f"error updating open orders from websocket {upd_list} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
 
     def handle_balance_update(self, upd, source="WS"):
         try:
@@ -981,7 +981,7 @@ class Passivbot:
             self.balance = max(upd[self.quote]["total"], 1e-12)
         except Exception as e:
             logging.error(f"error updating balance from websocket {upd} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
 
     def handle_ohlcv_1m_update(self, symbol, upd):
         if symbol not in self.ohlcvs_1m:
@@ -1006,7 +1006,7 @@ class Passivbot:
                     upnl_sum += upnl
             except Exception as e:
                 logging.error(f"error calculating upnl sum {e}")
-                traceback.print_exc()
+                # traceback.print_exc()
                 return 0.0
         return upnl_sum
 
@@ -1027,7 +1027,9 @@ class Passivbot:
             except Exception as e:
                 logging.error(f"error loading {self.pnls_cache_filepath} {e}")
         if pnls_cache:
+            logging.info('debug plns cash available')
             newest_pnls = await self.fetch_pnls(start_time=pnls_cache[-1]["timestamp"])
+            logging.info('debug new plns are defined')
             if pnls_cache[0]["timestamp"] > age_limit + 1000 * 60 * 60 * 4:
                 # might be older missing pnls
                 logging.info(
@@ -1045,7 +1047,9 @@ class Passivbot:
                     key=lambda x: x["timestamp"],
                 )
         else:
+            logging.info('debug plns cash are missing, working on adding')
             pnls_cache = await self.fetch_pnls(start_time=age_limit)
+            logging.info('debug plns cash available')
             if pnls_cache:
                 try:
                     json.dump(pnls_cache, open(self.pnls_cache_filepath, "w"))
@@ -1134,7 +1138,7 @@ class Passivbot:
         except Exception as e:
             logging.error(f"error with {get_function_name()} {e}")
             print_async_exception(res)
-            traceback.print_exc()
+            # traceback.print_exc()
             return False
 
     async def determine_utc_offset(self, verbose=True):
@@ -1210,7 +1214,7 @@ class Passivbot:
                 return res
         except Exception as e:
             logging.error(f"error with {get_function_name()} for {symbol}: {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
         logging.info(f"debug get_last_price {symbol} failed")
         return null_replace
 
@@ -1313,7 +1317,7 @@ class Passivbot:
                 )
             except Exception as e:
                 logging.error(f"error with {get_function_name()} for {symbol}: {e}")
-                traceback.print_exc()
+                # traceback.print_exc()
 
     def calc_ideal_orders(self):
         ideal_orders = {symbol: [] for symbol in self.active_symbols}
@@ -1640,7 +1644,7 @@ class Passivbot:
                     )
                 except Exception as e:
                     logging.error(f"error in calc_orders_to_cancel_and_create {e}")
-                    traceback.print_exc()
+                    # traceback.print_exc()
                     print(x)
         keys = ("symbol", "side", "position_side", "qty", "price")
         to_cancel, to_create = [], []
@@ -1797,7 +1801,7 @@ class Passivbot:
             return True
         except Exception as e:
             logging.error(f"error with {get_function_name()} for {symbol}: {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             return False
 
     def get_symbols_with_pos(self, pside=None):
@@ -1854,7 +1858,7 @@ class Passivbot:
                 await asyncio.gather(*[self.update_ohlcvs_1m_single(s) for s in symbols_to_update])
         except Exception as e:
             logging.error(f"error with {get_function_name()} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
 
     async def maintain_hourly_cycle(self):
         logging.info(f"Starting hourly_cycle...")
@@ -1866,7 +1870,7 @@ class Passivbot:
                 await asyncio.sleep(1)
             except Exception as e:
                 logging.error(f"error with {get_function_name()} {e}")
-                traceback.print_exc()
+                # traceback.print_exc()
                 await asyncio.sleep(5)
 
     async def start_data_maintainers(self):
@@ -1934,7 +1938,7 @@ class Passivbot:
                 self.handle_ohlcv_1m_update(symbol, res)
             except Exception as e:
                 logging.error(f"exception watch_ohlcv_1m_single {symbol} {e}")
-                traceback.print_exc()
+                # traceback.print_exc()
                 await asyncio.sleep(1)
             await asyncio.sleep(0.1)
 
@@ -1981,7 +1985,7 @@ class Passivbot:
             except Exception as e:
                 logging.error(f"error executing {type_} {order} {e}")
                 print_async_exception(execution)
-                traceback.print_exc()
+                # traceback.print_exc()
                 any_exceptions = True
         results = []
         for execution in executions:
@@ -1992,7 +1996,7 @@ class Passivbot:
             except Exception as e:
                 logging.error(f"error executing {type_} {execution} {e}")
                 print_async_exception(result)
-                traceback.print_exc()
+                # traceback.print_exc()
                 any_exceptions = True
         if any_exceptions:
             await self.restart_bot_on_too_many_errors()
@@ -2047,7 +2051,7 @@ class Passivbot:
                 await asyncio.sleep(max(0.0, sleep_time_ms / 1000.0))
             except Exception as e:
                 logging.error(f"error with {get_function_name()} {e}")
-                traceback.print_exc()
+                # traceback.print_exc()
                 await asyncio.sleep(5)
                 await self.restart_bot_on_too_many_errors()
 
@@ -2095,7 +2099,7 @@ class Passivbot:
             )
         except Exception as e:
             logging.error(f"error with update_ohlcvs_1m_single_from_disk {symbol} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             try:
                 os.remove(filepath)
             except Exception as e0:
@@ -2132,7 +2136,7 @@ class Passivbot:
                 await self.update_ohlcvs_1m_single_from_exchange(symbol)
         except Exception as e:
             logging.error(f"error with {get_function_name()} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             await self.restart_bot_on_too_many_errors()
 
     def create_lock_file(self, filepath):
@@ -2141,7 +2145,7 @@ class Passivbot:
             return True
         except Exception as e:
             logging.error(f"error with {get_function_name()} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             return False
 
     def lock_exists(self, filepath):
@@ -2149,7 +2153,7 @@ class Passivbot:
             return os.path.exists(f"{filepath}.lock")
         except Exception as e:
             logging.error(f"error with {get_function_name()} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             return False
 
     def get_lock_age_ms(self, filepath):
@@ -2158,7 +2162,7 @@ class Passivbot:
                 return utc_ms() - get_file_mod_utc(f"{filepath}.lock")
         except Exception as e:
             logging.error(f"error with {get_function_name()} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
         return utc_ms()
 
     def remove_lock_file(self, filepath):
@@ -2168,7 +2172,7 @@ class Passivbot:
                 return True
         except Exception as e:
             logging.error(f"error with {get_function_name()} {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
         return False
 
     async def close(self):
@@ -2254,7 +2258,7 @@ class Passivbot:
                 )
         except Exception as e1:
             logging.error(f"error with refresh_approved_ignored_coins_lists {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
 
 
 def setup_bot(config):
@@ -2328,7 +2332,7 @@ async def main():
             await bot.start_bot()
         except Exception as e:
             logging.error(f"passivbot error {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
         finally:
             try:
                 bot.stop_data_maintainers()

@@ -64,9 +64,7 @@ class BitgetBot(Passivbot):
         for symbol in self.markets_dict:
             elm = self.markets_dict[symbol]
             self.symbol_ids[symbol] = elm["id"]
-            self.min_costs[symbol] = max(
-                5.1, 0.1 if elm["limits"]["cost"]["min"] is None else elm["limits"]["cost"]["min"]
-            )
+            self.min_costs[symbol] = 0.1 if elm["limits"]["cost"]["min"] is None else elm["limits"]["cost"]["min"]
             self.min_qtys[symbol] = elm["limits"]["amount"]["min"]
             self.qty_steps[symbol] = elm["precision"]["amount"]
             self.price_steps[symbol] = elm["precision"]["price"]
@@ -193,7 +191,7 @@ class BitgetBot(Passivbot):
             traceback.print_exc()
             return False
 
-    async def fetch_pnls(self, start_time=None, end_time=None, limit=None):
+    async def fetch_pnls_old(self, start_time=None, end_time=None, limit=None):
         params = {"productType": "USDT-FUTURES"}
         if start_time:
             start_time = int(start_time)
@@ -224,12 +222,12 @@ class BitgetBot(Passivbot):
             if all_data[-1]["timestamp"] < start_time:
                 # print("debug b")
                 break
-            logging.info(f"debug c fetched pnls {len(data)} {all_data[-1]['datetime']}")
+            # print(f"debug c fetched pnls {len(data)} {all_data[-1]['datetime']}")
             params["endTime"] = int(all_data[-1]["timestamp"])
         all_data_d = {calc_hash(x): x for x in all_data}  # deduplicate
         return sorted(all_data_d.values(), key=lambda x: x["timestamp"])
 
-    async def fetch_pnls_old(self, start_time=None, end_time=None, limit=None):
+    async def fetch_pnls(self, start_time=None, end_time=None, limit=None):
         wait_between_fetches_minimum_seconds = 0.5
         all_res = {}
         until = int(end_time) if end_time else None

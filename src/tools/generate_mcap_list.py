@@ -20,7 +20,8 @@ def is_stablecoin(elm):
     return False
 
 
-def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None, max_price=None):
+def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None, max_price=None, time_range=None,
+                        base_volatility=None):
     # Fetch the top N coins by market cap
     markets_url = "https://api.coingecko.com/api/v3/coins/markets"
     per_page = 150
@@ -31,6 +32,7 @@ def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None, max
         "per_page": per_page,
         "page": 1,
         "sparkline": "false",
+        "price_change_percentage": time_range,
     }
     minimum_market_cap = minimum_market_cap_millions * 1e6
     approved_coins = {}
@@ -86,6 +88,7 @@ def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None, max
             elm["supply_ratio"] = supply_ratio
             elm["penalized_mcap"] = penalized_mcap
             elm["liquidity_ratio"] = elm["total_volume"] / elm["market_cap"]
+            volatility = elm[f"price_change_percentage_{time_range}_in_currency"]
 
             coin = elm["symbol"].upper()
             print(f'working on {coin}')
@@ -100,10 +103,20 @@ def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None, max
                     print(f"Added approved coins {','.join(added)}")
                 return approved_coins
             if is_stablecoin(elm):
+                print(f"stablecoin, skipping")
                 disapproved[coin] = "stablecoin"
                 continue
             if max_price is not None and elm["current_price"] > max_price:
+                print(f"price above {max_price} {elm['current_price']}, skipping")
                 disapproved[coin] = f"price_above_{max_price}"
+                continue
+            if volatility is None:
+                print(f"Non available volatility data, skipping")
+                disapproved[coin] = "Non available volatility data"
+                continue
+            if  volatility > base_volatility:
+                print(f"High volatility {volatility:.2f} > {base_volatility:.2f}")
+                disapproved[coin] = f"volatility {volatility:.2f} > {base_volatility:.2f}"
                 continue
             if exchange_approved_coins is not None and coin not in exchange_approved_coins:
                 disapproved[coin] = "not_active"
@@ -131,7 +144,7 @@ if __name__ == "__main__":
         type=int,
         dest="n_coins",
         required=False,
-        default=15,
+        default=20,
         help=f"Maxiumum number of top market cap coins. Default=100",
     )
     parser.add_argument(
@@ -140,7 +153,7 @@ if __name__ == "__main__":
         type=float,
         dest="minimum_market_cap_millions",
         required=False,
-        default=300.0,
+        default=1000.0,
         help=f"Minimum market cap in millions of USD. Default=300.0",
     )
     parser.add_argument(
@@ -162,13 +175,34 @@ if __name__ == "__main__":
         help="Optional: Output path. Default=configs/approved_coins_{n_coins}_{min_mcap}.json",
     )
     parser.add_argument(
-        f"--max_price",
+        f"--price",
         f"-p",
         type=float,
-        dest="max_price",
+        dest="price",
         required=False,
         default=5,
         help="Optional: Skip coins with price above this value. Example: --max_price 5.0",
+    )
+
+    parser.add_argument(
+        f"--time_range",
+        f"-t",
+        type=str,
+        dest="time_range",
+        required=False,
+        default='1y',
+        help="Optional: Add time_range to define price volatility. Valid values: 1h, 24h, 7d, 14d, 30d, 200d, 1y",
+    )
+
+    parser.add_argument(
+        f"--volatility",
+        f"-v",
+        type=float,
+        dest="volatility",
+        required=False,
+        default=500.0,
+        help="Optional: Add volatility percentage limit to filter the coins with high volatility per defined range. "
+             "Example: --volatility 500.0"
     )
 
     args = parser.parse_args()
@@ -177,7 +211,9 @@ if __name__ == "__main__":
         args.n_coins,
         args.minimum_market_cap_millions,
         args.exchange,
-        args.max_price)
+        args.price,
+        args.time_range,
+        args.volatility)
 
     # Get absolute path to ../configs/
     config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "configs"))
@@ -188,8 +224,8 @@ if __name__ == "__main__":
         if args.minimum_market_cap_millions:
             name_parts.append(f"{int(args.minimum_market_cap_millions)}_mcap")
 
-        if args.max_price is not None:
-            name_parts.append(f"{int(args.max_price)}_usd")
+        if args.price is not None:
+            name_parts.append(f"{int(args.price)}_usd")
 
         if args.exchange:
             name_parts.append(args.exchange.lower())

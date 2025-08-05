@@ -3,7 +3,6 @@ import json
 import argparse
 import sys
 import os
-import traceback
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from pure_funcs import calc_hash, symbol_to_coin, ts_to_date_utc
@@ -11,22 +10,18 @@ from procedures import utc_ms
 
 
 def is_stablecoin(elm):
-    try:
-        if elm["symbol"] in ["tether", "usdb", "usdy", "tusd", "usd0", "usde"]:
-            return True
-        if (
-            all([abs(elm[k] - 1.0) < 0.01 for k in ["high_24h", "low_24h", "current_price"]])
-            and abs(elm["price_change_24h"]) < 0.01
-        ):
-            return True
-        return False
-    except Exception as e:
-        print(f"error with is_stablecoin {elm} {e}")
-        traceback.print_exc()
-        return False
+    if elm["symbol"] in ["tether", "usdb", "usdy", "tusd", "usd0", "usde", 'ubtc']:
+        return True
+    if (
+        all([abs(elm[k] - 1.0) < 0.01 for k in ["high_24h", "low_24h", "current_price"]])
+        and abs(elm["price_change_24h"]) < 0.01
+    ):
+        return True
+    return False
 
 
-def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None):
+def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None, max_price=None, time_range=None,
+                        base_volatility=None):
     # Fetch the top N coins by market cap
     markets_url = "https://api.coingecko.com/api/v3/coins/markets"
     per_page = 150
@@ -37,6 +32,7 @@ def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None):
         "per_page": per_page,
         "page": 1,
         "sparkline": "false",
+        "price_change_percentage": time_range,
     }
     minimum_market_cap = minimum_market_cap_millions * 1e6
     approved_coins = {}
@@ -92,8 +88,10 @@ def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None):
             elm["supply_ratio"] = supply_ratio
             elm["penalized_mcap"] = penalized_mcap
             elm["liquidity_ratio"] = elm["total_volume"] / elm["market_cap"]
+            volatility = elm[f"price_change_percentage_{time_range}_in_currency"]
 
             coin = elm["symbol"].upper()
+            print(f'working on {coin}')
             if len(approved_coins) >= n_coins:
                 print(f"N coins == {n_coins}")
                 if added:
@@ -105,7 +103,20 @@ def get_top_market_caps(n_coins, minimum_market_cap_millions, exchange=None):
                     print(f"Added approved coins {','.join(added)}")
                 return approved_coins
             if is_stablecoin(elm):
+                print(f"stablecoin, skipping")
                 disapproved[coin] = "stablecoin"
+                continue
+            if max_price is not None and elm["current_price"] > max_price:
+                print(f"price above {max_price} {elm['current_price']}, skipping")
+                disapproved[coin] = f"price_above_{max_price}"
+                continue
+            if volatility is None:
+                print(f"Non available volatility data, skipping")
+                disapproved[coin] = "Non available volatility data"
+                continue
+            if  volatility > base_volatility:
+                print(f"High volatility {volatility:.2f} > {base_volatility:.2f}")
+                disapproved[coin] = f"volatility {volatility:.2f} > {base_volatility:.2f}"
                 continue
             if exchange_approved_coins is not None and coin not in exchange_approved_coins:
                 disapproved[coin] = "not_active"
@@ -133,7 +144,7 @@ if __name__ == "__main__":
         type=int,
         dest="n_coins",
         required=False,
-        default=100,
+        default=5,
         help=f"Maxiumum number of top market cap coins. Default=100",
     )
     parser.add_argument(
@@ -142,7 +153,7 @@ if __name__ == "__main__":
         type=float,
         dest="minimum_market_cap_millions",
         required=False,
-        default=300.0,
+        default=1000.0,
         help=f"Minimum market cap in millions of USD. Default=300.0",
     )
     parser.add_argument(
@@ -151,7 +162,7 @@ if __name__ == "__main__":
         type=str,
         dest="exchange",
         required=False,
-        default=None,
+        default='bybit',
         help=f"Optional: filter by coins available on exchange. Comma separated values. Default=None",
     )
     parser.add_argument(
@@ -163,17 +174,65 @@ if __name__ == "__main__":
         default=None,
         help="Optional: Output path. Default=configs/approved_coins_{n_coins}_{min_mcap}.json",
     )
+    parser.add_argument(
+        f"--price",
+        f"-p",
+        type=float,
+        dest="price",
+        required=False,
+        default=1,
+        help="Optional: Skip coins with price above this value. Example: --max_price 5.0",
+    )
+
+    parser.add_argument(
+        f"--time_range",
+        f"-t",
+        type=str,
+        dest="time_range",
+        required=False,
+        default='1y',
+        help="Optional: Add time_range to define price volatility. Valid values: 1h, 24h, 7d, 14d, 30d, 200d, 1y",
+    )
+
+    parser.add_argument(
+        f"--volatility",
+        f"-v",
+        type=float,
+        dest="volatility",
+        required=False,
+        default=10000.0,
+        help="Optional: Add volatility percentage limit to filter the coins with high volatility per defined range. "
+             "Example: --volatility 500.0"
+    )
+
     args = parser.parse_args()
 
-    market_caps = get_top_market_caps(args.n_coins, args.minimum_market_cap_millions, args.exchange)
+    market_caps = get_top_market_caps(
+        args.n_coins,
+        args.minimum_market_cap_millions,
+        args.exchange,
+        args.price,
+        args.time_range,
+        args.volatility)
+
+    # Get absolute path to ../configs/
+    config_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "configs"))
+
     if args.output is None:
-        fname = f"configs/approved_coins_{ts_to_date_utc(utc_ms())[:10]}"
-        fname += f"_{args.n_coins}_coins_{int(args.minimum_market_cap_millions)}_min_mcap"
-        if args.exchange is not None:
-            fname += "_" + "_".join(args.exchange.split(","))
-        fname += ".json"
+        name_parts = [f"top_{args.n_coins}_coins"]
+
+        if args.minimum_market_cap_millions:
+            name_parts.append(f"{int(args.minimum_market_cap_millions)}_mcap")
+
+        if args.price is not None:
+            name_parts.append(f"{int(args.price)}_usd")
+
+        if args.exchange:
+            name_parts.append(args.exchange.lower())
+
+        fname = os.path.join(config_dir, f"{'_'.join(name_parts)}.json")
     else:
         fname = args.output
     print(f"Dumping output to {fname}")
-    json.dump(market_caps, open(fname.replace(".json", "_full.json"), "w"))
+    # json.dump(market_caps, open(fname.replace(".json", "_full.json"), "w"))
     json.dump(list(market_caps), open(fname, "w"))

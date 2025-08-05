@@ -512,7 +512,10 @@ def main():
             legend=dict(x=0.01, y=0.99),
         )
 
-        fig.show()
+        full_path = os.path.join(pareto_dir, "3d_plot.html")
+        fig.write_html(full_path)
+        print(f"Figure saved at {full_path}")
+
     elif len(w_keys) > 3:
         # More efficient implementation for high-dimensional Pareto fronts
         # Focus only on essential visualizations and optimize performance

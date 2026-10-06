@@ -1551,4 +1551,253 @@ mod tests {
         assert_eq!(order.price, 98.8);
         assert_eq!(order.qty, 20.0);
     }
+
+    // Deterministic trailing-entry params: zero volatility/WE weights so
+    // calc_dynamic_distance_multiplier resolves to exactly 1.0, isolating the
+    // threshold/retracement trigger branching under test from the multiplier math
+    // already covered by test_grid_entry_long_widens_spacing_with_volatility_and_wallet_exposure.
+    fn make_trailing_entry_params(threshold_base_pct: f64, retracement_base_pct: f64) -> TrailingMartingaleEntryParams {
+        TrailingMartingaleEntryParams {
+            double_down_factor: 1.0,
+            ema_gate_mode: EmaGateMode::Disabled,
+            threshold_base_pct,
+            initial_ema_dist: 0.0,
+            initial_qty_pct: 0.01,
+            retracement_base_pct,
+            threshold_volatility_1h_weight: 0.0,
+            threshold_volatility_1m_weight: 0.0,
+            threshold_we_weight: 0.0,
+            retracement_we_weight: 0.0,
+            retracement_volatility_1h_weight: 0.0,
+            retracement_volatility_1m_weight: 0.0,
+        }
+    }
+
+    fn make_trailing_state(bid: f64, ask: f64) -> StateParams {
+        StateParams {
+            balance: 100_000.0,
+            order_book: crate::types::OrderBook { bid, ask },
+            ema_bands: crate::types::EMABands {
+                upper: 0.0,
+                lower: 0.0,
+            },
+            volatility_ema_1h: 0.0,
+            volatility_ema_1m: 0.0,
+        }
+    }
+
+    fn make_trailing_bot() -> BotParams {
+        BotParams {
+            wallet_exposure_limit: 1.0,
+            total_wallet_exposure_limit: 1.0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_trailing_entry_long_threshold_only_triggers_immediately() {
+        // retracement disabled: entry fires as soon as a threshold is configured,
+        // capped by the current bid (docs: "threshold is the required excursion").
+        let exchange = make_exchange_params();
+        let state = make_trailing_state(94.5, 95.5);
+        let position = Position { size: 20.0, price: 100.0 };
+
+        let order = calc_trailing_entry_long(
+            &exchange,
+            &state,
+            &make_trailing_bot(),
+            &make_runtime_context(),
+            &make_trailing_entry_params(0.05, 0.0),
+            &position,
+            &TrailingPriceBundle::default(),
+            1.0,
+        );
+
+        assert_eq!(order.price, 94.5); // min(bid=94.5, 100*(1-0.05)=95.0)
+        assert!(matches!(
+            order.order_type,
+            OrderType::EntryTrailingNormalLong | OrderType::EntryTrailingCroppedLong
+        ));
+        assert!(order.qty > 0.0);
+    }
+
+    #[test]
+    fn test_trailing_entry_long_threshold_and_retracement_not_yet_triggered() {
+        // threshold crossed (min_since_open below the threshold price) but the
+        // retracement leg hasn't confirmed yet -> must stay a zero-qty no-op, not
+        // Order::default().
+        let exchange = make_exchange_params();
+        let state = make_trailing_state(94.5, 95.5);
+        let position = Position { size: 20.0, price: 100.0 };
+        let bundle = TrailingPriceBundle {
+            min_since_open: 90.0, // < 100*(1-0.05) = 95.0 -> threshold satisfied
+            max_since_min: 90.5,  // needs > 90.0*(1+0.02) = 91.8 -> not yet
+            ..Default::default()
+        };
+
+        let order = calc_trailing_entry_long(
+            &exchange,
+            &state,
+            &make_trailing_bot(),
+            &make_runtime_context(),
+            &make_trailing_entry_params(0.05, 0.02),
+            &position,
+            &bundle,
+            1.0,
+        );
+
+        assert_eq!(order.qty, 0.0);
+        assert_eq!(order.price, 0.0);
+        assert_eq!(order.order_type, OrderType::EntryTrailingNormalLong);
+    }
+
+    #[test]
+    fn test_trailing_entry_long_threshold_and_retracement_triggers() {
+        let exchange = make_exchange_params();
+        let state = make_trailing_state(99.0, 99.5);
+        let position = Position { size: 20.0, price: 100.0 };
+        let bundle = TrailingPriceBundle {
+            min_since_open: 90.0, // < 95.0 -> threshold satisfied
+            max_since_min: 92.0,  // > 90.0*(1+0.02) = 91.8 -> retracement confirmed
+            ..Default::default()
+        };
+
+        let order = calc_trailing_entry_long(
+            &exchange,
+            &state,
+            &make_trailing_bot(),
+            &make_runtime_context(),
+            &make_trailing_entry_params(0.05, 0.02),
+            &position,
+            &bundle,
+            1.0,
+        );
+
+        // min(bid=99.0, 100*(1-0.05+0.02)=97.0) = 97.0
+        assert_eq!(order.price, 97.0);
+        assert!(matches!(
+            order.order_type,
+            OrderType::EntryTrailingNormalLong | OrderType::EntryTrailingCroppedLong
+        ));
+        assert!(order.qty > 0.0);
+    }
+
+    #[test]
+    fn test_trailing_entry_long_pure_retracement_triggers() {
+        // threshold_pct == 0: entry activates purely from the retracement leg and
+        // reprices unrounded straight to the current bid (no round_dn applied in
+        // this branch, unlike the threshold branches above).
+        let exchange = make_exchange_params();
+        let state = make_trailing_state(88.0, 89.0);
+        let position = Position { size: 20.0, price: 100.0 };
+        let bundle = TrailingPriceBundle {
+            min_since_open: 90.0,
+            max_since_min: 93.5, // > 90.0*(1+0.03) = 92.7 -> retracement confirmed
+            ..Default::default()
+        };
+
+        let order = calc_trailing_entry_long(
+            &exchange,
+            &state,
+            &make_trailing_bot(),
+            &make_runtime_context(),
+            &make_trailing_entry_params(0.0, 0.03),
+            &position,
+            &bundle,
+            1.0,
+        );
+
+        assert_eq!(order.price, 88.0);
+        assert!(matches!(
+            order.order_type,
+            OrderType::EntryTrailingNormalLong | OrderType::EntryTrailingCroppedLong
+        ));
+        assert!(order.qty > 0.0);
+    }
+
+    #[test]
+    fn test_trailing_entry_long_pure_retracement_not_yet_triggered() {
+        let exchange = make_exchange_params();
+        let state = make_trailing_state(88.0, 89.0);
+        let position = Position { size: 20.0, price: 100.0 };
+        let bundle = TrailingPriceBundle {
+            min_since_open: 90.0,
+            max_since_min: 91.0, // needs > 92.7 -> not yet
+            ..Default::default()
+        };
+
+        let order = calc_trailing_entry_long(
+            &exchange,
+            &state,
+            &make_trailing_bot(),
+            &make_runtime_context(),
+            &make_trailing_entry_params(0.0, 0.03),
+            &position,
+            &bundle,
+            1.0,
+        );
+
+        assert_eq!(order.qty, 0.0);
+        assert_eq!(order.price, 0.0);
+        assert_eq!(order.order_type, OrderType::EntryTrailingNormalLong);
+    }
+
+    #[test]
+    fn test_trailing_entry_short_threshold_only_triggers_immediately() {
+        // Mirror of the long threshold-only case: capped by the current ask
+        // (round_up/max instead of round_dn/min), position size stored negative
+        // per the codebase's signed-quantity convention (AGENTS.md).
+        let exchange = make_exchange_params();
+        let state = make_trailing_state(103.0, 104.0);
+        let position = Position { size: -20.0, price: 100.0 };
+
+        let order = calc_trailing_entry_short(
+            &exchange,
+            &state,
+            &make_trailing_bot(),
+            &make_runtime_context(),
+            &make_trailing_entry_params(0.05, 0.0),
+            &position,
+            &TrailingPriceBundle::default(),
+            1.0,
+        );
+
+        assert_eq!(order.price, 105.0); // max(ask=104.0, 100*(1+0.05)=105.0)
+        assert!(matches!(
+            order.order_type,
+            OrderType::EntryTrailingNormalShort | OrderType::EntryTrailingCroppedShort
+        ));
+        assert!(order.qty < 0.0);
+    }
+
+    #[test]
+    fn test_trailing_entry_short_threshold_and_retracement_triggers() {
+        let exchange = make_exchange_params();
+        let state = make_trailing_state(100.5, 101.0);
+        let position = Position { size: -20.0, price: 100.0 };
+        let bundle = TrailingPriceBundle {
+            max_since_open: 110.0, // > 100*(1+0.05) = 105.0 -> threshold satisfied
+            min_since_max: 107.0,  // < 110.0*(1-0.02) = 107.8 -> retracement confirmed
+            ..Default::default()
+        };
+
+        let order = calc_trailing_entry_short(
+            &exchange,
+            &state,
+            &make_trailing_bot(),
+            &make_runtime_context(),
+            &make_trailing_entry_params(0.05, 0.02),
+            &position,
+            &bundle,
+            1.0,
+        );
+
+        // max(ask=101.0, 100*(1+0.05-0.02)=103.0) = 103.0
+        assert_eq!(order.price, 103.0);
+        assert!(matches!(
+            order.order_type,
+            OrderType::EntryTrailingNormalShort | OrderType::EntryTrailingCroppedShort
+        ));
+        assert!(order.qty < 0.0);
+    }
 }

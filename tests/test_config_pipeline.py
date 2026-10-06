@@ -113,6 +113,40 @@ def test_prepare_config_rejects_invalid_fixed_runtime_overrides(
     with pytest.raises(error_type, match=error_match):
         prepare_config(source, verbose=False, target="canonical", runtime=None)
 
+def test_optimize_fixed_runtime_overrides_roundtrip():
+    source = get_template_config()
+    assert source["optimize"]["fixed_runtime_overrides"] == {
+        "bot.long.hsl.restart_after_red_policy": "always",
+        "bot.short.hsl.restart_after_red_policy": "always",
+    }
+    custom = {"bot.long.hsl.no_restart_drawdown_threshold": 1.0}
+    source["optimize"]["fixed_runtime_overrides"] = custom
+
+    prepared = prepare_config(source, verbose=False, target="canonical", runtime=None)
+
+    assert prepared["optimize"]["fixed_runtime_overrides"] == custom
+
+
+def test_optimize_fixed_runtime_overrides_empty_dict_disables_default():
+    source = get_template_config()
+    source["optimize"]["fixed_runtime_overrides"] = {}
+
+    prepared = prepare_config(source, verbose=False, target="canonical", runtime=None)
+
+    assert prepared["optimize"]["fixed_runtime_overrides"] == {}
+
+
+def test_optimize_fixed_runtime_overrides_omitted_key_uses_schema_default():
+    source = get_template_config()
+    del source["optimize"]["fixed_runtime_overrides"]
+
+    prepared = prepare_config(source, verbose=False, target="canonical", runtime=None)
+
+    assert prepared["optimize"]["fixed_runtime_overrides"] == {
+        "bot.long.hsl.restart_after_red_policy": "always",
+        "bot.short.hsl.restart_after_red_policy": "always",
+    }
+
 
 @pytest.mark.parametrize(
     "budgets,error_type,error_match",

@@ -5552,6 +5552,147 @@ mod core {
                 .any(|order| order.order_type == OrderType::CloseTrailingLong));
         }
 
+        // `prune_competing_close_reducers` above is a #[cfg(test)]-only helper that ranks raw,
+        // un-trimmed candidate orders directly via `close_reducer_preference_cmp`. The actual
+        // production path (`select_finalized_reducers_without_loss_gate` /
+        // `finalized_reducer_candidates`) ranks each candidate only *after* running it through
+        // `finalized_closes_with_reducer` -> `trim_closes_to_position`, and is also the only path
+        // that ever runs the cross-symbol realized-loss-gate batch selection
+        // (`collect_reducer_candidates_for_side` / `batch_reducer_preference_cmp`). Nothing
+        // elsewhere in this file calls those production functions directly in a unit test — they
+        // are only reached indirectly through full `compute_ideal_orders` integration tests. These
+        // parity tests close that gap for the single-position, no-loss-gate case by running the
+        // same scenarios through both paths and asserting they agree.
+        fn run_production_reducer_selection(
+            mut closes: Vec<IdealOrder>,
+            pside: PositionSide,
+            position: Position,
+        ) -> Vec<IdealOrder> {
+            let mut symbol = make_basic_symbol(0);
+            symbol.order_book = OrderBook {
+                bid: 100.0,
+                ask: 101.0,
+            };
+            match pside {
+                PositionSide::Long => symbol.long.position = position,
+                PositionSide::Short => symbol.short.position = position,
+            }
+            for close in &mut closes {
+                close.pside = pside;
+            }
+            let input = OrchestratorInput {
+                timestamp_ms: 0,
+                balance: 10_000.0,
+                balance_raw: 10_000.0,
+                global: make_basic_global(),
+                symbols: vec![symbol],
+                peek_hints: None,
+                forager_hysteresis: None,
+            };
+            let mut per_side = vec![Some(PerSymbolOrders {
+                symbol_idx: 0,
+                entries: Vec::new(),
+                closes,
+                pos: position,
+                mode: TradingMode::Normal,
+            })];
+            select_finalized_reducers_without_loss_gate(&input, &mut per_side, pside);
+            per_side.into_iter().next().flatten().unwrap().closes
+        }
+
+        fn assert_reducer_selection_matches_reference(
+            closes: Vec<IdealOrder>,
+            pside: PositionSide,
+            position: Position,
+        ) {
+            let order_book = OrderBook {
+                bid: 100.0,
+                ask: 101.0,
+            };
+            let mut reference = closes.clone();
+            for order in &mut reference {
+                order.pside = pside;
+            }
+            prune_competing_close_reducers(&mut reference, pside, &order_book);
+
+            let production = run_production_reducer_selection(closes, pside, position);
+
+            let normalize = |orders: &[IdealOrder]| {
+                let mut rows: Vec<(u16, i64, i64)> = orders
+                    .iter()
+                    .map(|o| {
+                        (
+                            o.order_type.id(),
+                            (o.qty * 1_000_000.0).round() as i64,
+                            (o.price * 1_000_000.0).round() as i64,
+                        )
+                    })
+                    .collect();
+                rows.sort();
+                rows
+            };
+            assert_eq!(
+                normalize(&production),
+                normalize(&reference),
+                "production reducer selection drifted from the reference pruning helper"
+            );
+        }
+
+        #[test]
+        fn production_reducer_selection_matches_reference_largest_reducer_wins() {
+            let closes = vec![
+                IdealOrder {
+                    symbol_idx: 0,
+                    pside: PositionSide::Long,
+                    qty: -0.01,
+                    price: 100.9,
+                    order_type: OrderType::CloseAutoReduceWelLong,
+                },
+                IdealOrder {
+                    symbol_idx: 0,
+                    pside: PositionSide::Long,
+                    qty: -0.81,
+                    price: 102.0,
+                    order_type: OrderType::CloseUnstuckLong,
+                },
+                IdealOrder {
+                    symbol_idx: 0,
+                    pside: PositionSide::Long,
+                    qty: -0.2,
+                    price: 101.5,
+                    order_type: OrderType::CloseGridLong,
+                },
+            ];
+            // Large enough that no candidate's finalized (reducer + ordinary-close) total needs
+            // trimming, so production and reference rank the same untrimmed quantities.
+            let position = Position { size: 2.0, price: 100.0 };
+
+            assert_reducer_selection_matches_reference(closes, PositionSide::Long, position);
+        }
+
+        #[test]
+        fn production_reducer_selection_matches_reference_reachability_tiebreak() {
+            let closes = vec![
+                IdealOrder {
+                    symbol_idx: 0,
+                    pside: PositionSide::Long,
+                    qty: -0.3,
+                    price: 101.1,
+                    order_type: OrderType::CloseAutoReduceTwelLong,
+                },
+                IdealOrder {
+                    symbol_idx: 0,
+                    pside: PositionSide::Long,
+                    qty: -0.3,
+                    price: 100.9,
+                    order_type: OrderType::CloseAutoReduceWelLong,
+                },
+            ];
+            let position = Position { size: 2.0, price: 100.0 };
+
+            assert_reducer_selection_matches_reference(closes, PositionSide::Long, position);
+        }
+
         #[test]
         fn close_reducer_selection_keeps_panic_exclusive() {
             let order_book = OrderBook {
